@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Absensi Online</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+            position: relative;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        .search-results {
+            border: 1px solid #ccc;
+            border-top: none;
+            max-height: 150px;
+            overflow-y: auto;
+            position: absolute;
+            width: 100%;
+            background: white;
+            z-index: 10;
+            border-radius: 0 0 5px 5px;
+            display: none;
+        }
+        .search-results div {
+            padding: 10px;
+            cursor: pointer;
+        }
+        .search-results div:hover {
+            background-color: #f0f0f0;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-masuk { background-color: #2ecc71; }
+        .btn-masuk:hover { background-color: #27ae60; }
+        .btn-keluar { background-color: #e74c3c; }
+        .btn-keluar:hover { background-color: #c0392b; }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+            display: none;
+        }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #dee2e6; color: #383d41; border: 1px solid #d6d8db; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Absensi Online</h2>
+    
+    <div class="form-group">
+        <label for="namaInput">Cari & Pilih Nama:</label>
+        <input type="text" id="namaInput" placeholder="Ketik nama Anda..." autocomplete="off">
+        <div id="searchResults" class="search-results"></div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-masuk" onclick="prosesAbsen('Masuk')">MASUK</button>
+        <button class="btn-keluar" onclick="prosesAbsen('Keluar')">KELUAR</button>
+    </div>
+
+    <div id="status"></div>
+</div>
+
+<script>
+    // 1. URL WEB APP GOOGLE APPS SCRIPT (MASUKKAN URL ANDA DI SINI)
+    const SPREADSHEET_URL = "https://script.google.com/macros/s/AKfycbwuIvpgNGzs4HQcbBTvuWICz3K2N1xt9YOpv4W8k7Wj1k6FrIp3whyx9LWbcumudeCo8Q/exec";       
+
+    // 2. DAFTAR NAMA KARYAWAN/ANGGOTA
+    const daftarNama = ["Muhaemin Alparisi", "Firman Litowali", "Aqil Anhari", "Rifky Fajriantama", "Rizky Restu Tinangtu", "Siti Atikoh", "Ismayati"];
+
+    // 3. PENGATURAN TITIK LOKASI (Koordinat lat & lng dan radius toleransi)
+    const LOKASI_1 = { lat: -6.0188947, lng: 105.9668766, nama: "Kantor KJS", radius: 2000 }; 
+    const LOKASI_2 = { lat: -6.0071129, lng: 106.0072869, nama: "Gd Logistik KS", radius: 2000 };
+
+    const namaInput = document.getElementById('namaInput');
+    const searchResults = document.getElementById('searchResults');
+    const statusDiv = document.getElementById('status');
+
+    // Sistem Filter Pencarian Nama
+    namaInput.addEventListener('input', function() {
+        const query = this.value.toLowerCase();
+        searchResults.innerHTML = '';
+        if (!query) {
+            searchResults.style.display = 'none';
+            return;
+        }
+
+        const hasilFilter = daftarNama.filter(nama => nama.toLowerCase().includes(query));
+        
+        if (hasilFilter.length > 0) {
+            hasilFilter.forEach(nama => {
+                const div = document.createElement('div');
+                div.textContent = nama;
+                div.onclick = function() {
+                    namaInput.value = nama;
+                    searchResults.style.display = 'none';
+                };
+                searchResults.appendChild(div);
+            });
+            searchResults.style.display = 'block';
+        } else {
+            searchResults.style.display = 'none';
+        }
+    });
+
+    // Tutup otomatis dropdown pencarian jika klik di luar elemen
+    document.addEventListener('click', function(e) {
+        if (e.target !== namaInput) searchResults.style.display = 'none';
+    });
+
+    // Penghitungan Jarak Menggunakan Formula Haversine
+    function hitungJarak(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // Jari-jari bumi (meter)
+        const phi1 = lat1 * Math.PI/180;
+        const phi2 = lat2 * Math.PI/180;
+        const deltaPhi = (lat2-lat1) * Math.PI/180;
+        const deltaLambda = (lon2-lon1) * Math.PI/180;
+
+        const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
+                  Math.cos(phi1) * Math.cos(phi2) *
+                  Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+        return R * c; 
+    }
+
+    // Fungsi Utama Eksekusi Absensi
+    function prosesAbsen(tipe) {
+        const nama = namaInput.value.trim();
+        
+        if (!nama || !daftarNama.includes(nama)) {
+            tampilkanStatus("Silakan pilih nama yang valid dari daftar pencarian!", "error");
+            return;
+        }
+
+        tampilkanStatus("Mendeteksi lokasi Anda...", "info");
+
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const userLat = position.coords.latitude;
+                    const userLng = position.coords.longitude;
+
+                    const jarakKeLokasi1 = hitungJarak(userLat, userLng, LOKASI_1.lat, LOKASI_1.lng);
+                    const jarakKeLokasi2 = hitungJarak(userLat, userLng, LOKASI_2.lat, LOKASI_2.lng);
+
+                    let absenBerhasil = false;
+                    let lokasiTerdeteksi = "";
+
+                    if (jarakKeLokasi1 <= LOKASI_1.radius) {
+                        absenBerhasil = true;
+                        lokasiTerdeteksi = LOKASI_1.nama;
+                    } else if (jarakKeLokasi2 <= LOKASI_2.radius) {
+                        absenBerhasil = true;
+                        lokasiTerdeteksi = LOKASI_2.nama;
+                    }
+
+                    if (absenBerhasil) {
+                        tampilkanStatus("Mengirim data ke spreadsheet...", "info");
+
+                        // Mengirim data absensi ke Apps Script secara asinkronus
+                        fetch(SPREADSHEET_URL, {
+                            method: "POST",
+                            mode: "no-cors", // "no-cors" digunakan agar pengiriman sukses melewati validasi keamanan lintas domain browser
+                            headers: { 
+                                "Content-Type": "text/plain;charset=utf-8" 
+                            },
+                            body: JSON.stringify({ 
+                                nama: nama, 
+                                tipe: tipe, 
+                                lokasi: lokasiTerdeteksi 
+                            })
+                        })
+                        .then(() => {
+                            // Karena mode no-cors menyembunyikan status respons, pembaruan UI diasumsikan sukses jika tanpa error transmisi jaringan
+                            tampilkanStatus(`Berhasil Disimpan!<br>Nama: ${nama}<br>Status: Absen ${tipe}<br>Lokasi: ${lokasiTerdeteksi}`, "success");
+                            namaInput.value = ""; // Reset form nama setelah berhasil
+                        })
+                        .catch((error) => {
+                            tampilkanStatus("Gagal mengirim data ke server: " + error, "error");
+                        });
+
+                    } else {
+                        tampilkanStatus("Gagal! Anda berada di luar jangkauan lokasi absensi.", "error");
+                    }
+                },
+                (error) => {
+                    tampilkanStatus("Gagal mendeteksi lokasi. Pastikan izin GPS aktif!", "error");
+                },
+                { enableHighAccuracy: true }
+            );
+        } else {
+            tampilkanStatus("Browser Anda tidak mendukung deteksi lokasi.", "error");
+        }
+    }
+
+    // Fungsi pembuat pesan status ke layar UI
+    function tampilkanStatus(pesan, jenis) {
+        statusDiv.innerHTML = pesan;
+        statusDiv.className = jenis;
+        statusDiv.style.display = "block";
+    }
+</script>
+
+</body>
+</html>
